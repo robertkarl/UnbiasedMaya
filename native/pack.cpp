@@ -11,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <regex>
+#include <sstream>
 namespace fs = std::filesystem;
 static void require(bool v, const std::string &why) {
   if (!v)

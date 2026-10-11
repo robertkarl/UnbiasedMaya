@@ -1,5 +1,10 @@
 # UnbiasedMaya
 
+Private source: https://github.com/robertkarl/UnbiasedMaya
+
+[Review the fork diff on GitHub](https://github.com/robertkarl/UnbiasedMaya/compare/upstream-baseline...main).
+`upstream-baseline` is the fixed Project Maya v1.0.34 fork point (`e728e52`).
+
 Project Maya's GLM-5.3-Flash inference engine with native C++ model preparation
 and an OpenAI-compatible C++ server. No Python in the supported build,
 preparation, or runtime. Initial target: Linux, one NVIDIA GPU, text and tools.
@@ -76,6 +81,10 @@ not implement them. Vision and external Qwen MTP packs are not supported.
 `timings.prompt_per_second` uses freshly processed tokens, excluding cache reuse.
 
 ## Operational validation
+
+The sample experimental unit uses `Restart=no` so failures remain visible and
+do not trigger repeated large-model loads. Restart manually after diagnosing a
+failure with `systemctl restart unbiased-maya`.
 
 Do not run this and another GPU inference service simultaneously. Keep the
 existing service configuration and model archive until Maya has passed API,
