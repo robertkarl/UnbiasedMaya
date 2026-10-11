@@ -1,0 +1,39 @@
+--- a/common/chat-auto-parser-generator.cpp
++++ b/common/chat-auto-parser-generator.cpp
+@@ -390,24 +390,19 @@
+                 optional_parsers.push_back(named_arg);
+             }
+         });
+-
+-        // Build required arg sequence in definition order
+-        common_peg_parser args_seq = p.eps();
+-        for (size_t i = 0; i < required_parsers.size(); i++) {
+-            if (i > 0) {
+-                args_seq = args_seq + p.space();
+-            }
+-            args_seq = args_seq + required_parsers[i];
+-        }
+ 
+-        // Build optional args with flexible ordering
+-        if (!optional_parsers.empty()) {
+-            common_peg_parser any_opt = p.choice();
+-            for (const auto & opt : optional_parsers) {
+-                any_opt |= opt;
+-            }
+-            args_seq = args_seq + p.repeat(p.space() + any_opt, 0, -1);
+-        }
++// Tagged arguments have names: model output need not follow schema order.
++// Optional fields may occur before, between, or after required fields.
++common_peg_parser optional_args = p.eps();
++if (!optional_parsers.empty()) {
++    auto any_optional = p.choice();
++    for (const auto& arg : optional_parsers) any_optional |= arg;
++    optional_args = p.zero_or_more(p.space() + any_optional);
++}
++std::vector<common_peg_parser> required_any_order;
++for (const auto& arg : required_parsers)
++    required_any_order.push_back(optional_args + p.space() + arg);
++auto args_seq = p.permute("tool-" + name + "-required-args", required_any_order) + optional_args;
+ 
+         if (!arguments.start.empty()) {
+             args_seq = p.literal(arguments.start) + args_seq;

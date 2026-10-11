@@ -1,0 +1,15 @@
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -365,7 +365,12 @@
+ 
+ llama_model * llama_model_create(llama_model_loader & ml, const llama_model_params & params) {
+     llm_arch arch = ml.get_arch();
++    if (arch == LLM_ARCH_UNKNOWN && params.vocab_only &&
++        (ml.get_arch_name() == "glm5-next" || ml.get_arch_name() == "glm5next")) {
++        return llama_model_create(LLM_ARCH_GLM4, params);
++    }
+     if (arch == LLM_ARCH_UNKNOWN) {
++
+         throw std::runtime_error("unknown model architecture: '" + ml.get_arch_name() + "'");
+     }
+ 

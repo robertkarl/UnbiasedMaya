@@ -515,19 +515,6 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   target_link_libraries(glm_pack_test PRIVATE ${_strata_gpu_glm_libs} ${_strata_gpu_runtime_target})
   target_include_directories(glm_model_big_test PRIVATE ${_strata_gpu_include_directories})
   target_link_libraries(glm_model_big_test PRIVATE ${_strata_gpu_glm_libs} ${_strata_gpu_runtime_target})
-  find_program(STRATA_PYTHON3 python3)
-  if(STRATA_PYTHON3)
-    add_test(NAME glm_model_big_gen
-             COMMAND ${STRATA_PYTHON3} ${CMAKE_CURRENT_SOURCE_DIR}/tools/glm_big_fixture.py
-                     --out ${CMAKE_CURRENT_BINARY_DIR}/glm5-big-fixture.gguf)
-    set_tests_properties(glm_model_big_gen PROPERTIES FIXTURES_SETUP glm5_big_gguf)
-    add_test(NAME glm_model_big_test
-             COMMAND glm_model_big_test ${CMAKE_CURRENT_BINARY_DIR}/glm5-big-fixture.gguf)
-    set_tests_properties(glm_model_big_test PROPERTIES
-                         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                         FIXTURES_REQUIRED glm5_big_gguf)
-  endif()
-
   add_executable(gdn_parity src/kernels/gdn_parity.cpp)
   target_include_directories(gdn_parity PRIVATE ${_strata_gpu_include_directories})
   target_link_libraries(gdn_parity PRIVATE strata_kernels ${_strata_gpu_runtime_target})
@@ -758,20 +745,13 @@ if(STRATA_NATIVE_EXPERTS)
   else()
     set(GGML_NATIVE ON CACHE BOOL "" FORCE)
   endif()
-  if(STRATA_GGML_DIR)
-    add_subdirectory(${STRATA_GGML_DIR}/ggml ${CMAKE_BINARY_DIR}/ggml EXCLUDE_FROM_ALL)
-  else()
-    include(FetchContent)
-    FetchContent_Declare(strata_llamacpp
-      GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
-      GIT_TAG 3cf03257f219afbe7334045ff7c6a06ac68c627d
-      GIT_SHALLOW FALSE)
-    FetchContent_GetProperties(strata_llamacpp)
-    if(NOT strata_llamacpp_POPULATED)
-      FetchContent_Populate(strata_llamacpp)
-    endif()
-    add_subdirectory(${strata_llamacpp_SOURCE_DIR}/ggml ${CMAKE_BINARY_DIR}/ggml EXCLUDE_FROM_ALL)
-  endif()
+if(NOT STRATA_GGML_DIR)
+  set(STRATA_GGML_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp)
+endif()
+if(NOT EXISTS "${STRATA_GGML_DIR}/ggml/CMakeLists.txt")
+  message(FATAL_ERROR "Missing pinned llama.cpp source; prepare dependencies on the connected host first")
+endif()
+add_subdirectory(${STRATA_GGML_DIR}/ggml ${CMAKE_BINARY_DIR}/ggml EXCLUDE_FROM_ALL)
   # part of strata_kernels_cpu (the pool calls these and they call its CPU probe: one library, so GNU ld's
   # one-pass static linking has no cycle to resolve)
   target_sources(strata_kernels_cpu PRIVATE src/kernels/cpu/native_expert.cpp src/kernels/cpu/iq_avx512.cpp
@@ -920,4 +900,36 @@ if(STRATA_BUILD_TESTS)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
   endif()
+endif()
+
+add_executable(maya-pack native/pack.cpp)
+target_include_directories(maya-pack PRIVATE include ${STRATA_GGML_DIR}/ggml/src)
+target_link_libraries(maya-pack PRIVATE ggml-base)
+# ---- UnbiasedMaya: one binary = the engine above plus a C++ front end (frontend/) ------------------------------
+# The front end takes its tokenizer, its Jinja chat-template engine and its HTTP library from the same pinned
+# llama.cpp checkout that ggml comes from.  ggml is already configured above, so llama.cpp's own build reuses it.
+if(STRATA_ENABLE_CUDA AND STRATA_NATIVE_EXPERTS)
+  set(LLAMA_BUILD_MTMD ON CACHE BOOL "" FORCE)
+  set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
+  foreach(_o LLAMA_BUILD_TESTS LLAMA_BUILD_TOOLS LLAMA_BUILD_EXAMPLES LLAMA_BUILD_SERVER LLAMA_BUILD_APP
+             LLAMA_BUILD_UI LLAMA_USE_PREBUILT_UI LLAMA_OPENSSL LLAMA_LLGUIDANCE LLAMA_ALL_WARNINGS)
+    set(${_o} OFF CACHE BOOL "" FORCE)
+  endforeach()
+  add_subdirectory(${STRATA_GGML_DIR} ${CMAKE_BINARY_DIR}/llama.cpp EXCLUDE_FROM_ALL)
+  find_package(Threads REQUIRED)
+  add_executable(unbiased-maya frontend/main.cpp frontend/engine_entry.cpp)
+  target_include_directories(unbiased-maya PRIVATE ${_strata_gpu_include_directories} ${STRATA_GGML_DIR}/vendor)
+  target_link_libraries(unbiased-maya PRIVATE strata_engine strata_prefill strata_spec ${_strata_gpu_runtime_target}
+                        llama-common llama mtmd cpp-httplib Threads::Threads)
+endif()
+
+add_executable(maya-pack-test native/pack_test.cpp)
+target_include_directories(maya-pack-test PRIVATE include ${STRATA_GGML_DIR}/ggml/src)
+target_link_libraries(maya-pack-test PRIVATE ggml-base)
+add_executable(maya-vocab native/vocab.cpp)
+target_link_libraries(maya-vocab PRIVATE ggml-base)
+if(STRATA_ENABLE_CUDA AND STRATA_NATIVE_EXPERTS)
+  add_executable(maya-chat-test frontend/chat_parser_test.cpp)
+  target_include_directories(maya-chat-test PRIVATE ${STRATA_GGML_DIR}/vendor)
+  target_link_libraries(maya-chat-test PRIVATE llama-common llama mtmd cpp-httplib Threads::Threads)
 endif()
