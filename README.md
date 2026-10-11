@@ -1,3 +1,10 @@
+# What is this
+
+https://github.com/mw00/project-maya
+
+Maya without all the bullshit. No python or downloading stuff at buildtime.
+
+
 # UnbiasedMaya
 
 Private source: https://github.com/robertkarl/UnbiasedMaya
