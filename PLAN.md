@@ -1,11 +1,11 @@
 # UnbiasedMaya implementation plan
 
-Status: planned; source inspected and cloned, conversion not implemented, Maya-S not downloaded.
+Status: native conversion committed as 60a568f; CPU/CUDA tests, full model packing, live API/tool tests, Pi task, and 36 GiB runtime measurements pass. All three Maya-S shards are SHA-256 verified on the persistent redundant SMB archive.
 Date: 2026-10-11
 
 ## Goal
 
-Run Maya-S on VM 220 on Proxmox `.57`, using its RTX A6000 (48 GB VRAM), 48 GiB guest RAM, and NVMe storage. Apply the same approach as Strata → UnbiasedStrata: preserve the inference engine, replace the Python application layer with C++, and make offline deployment a source copy followed by `make`.
+Run Maya-S on VM 220 on Proxmox `.57`, using its RTX A6000 (48 GB VRAM), 36 GiB guest RAM, and NVMe storage. Apply the same approach as Strata → UnbiasedStrata: preserve the inference engine, replace the Python application layer with C++, and make offline deployment a source copy followed by `make`.
 
 The supported build, model preparation, and serving paths must require no Python, pip, virtualenv, model downloads, or network access on the VM. Downloads happen on Debra. This is an implementation plan, not authorization to publish a new GitHub repository.
 
@@ -27,7 +27,7 @@ The supported build, model preparation, and serving paths must require no Python
 2. A native preparation tool builds the GLM pack from all Maya-S GGUF shards without copying the entire expert payload or invoking Python.
 3. One C++ server executable provides `/health`, `/v1/models`, and OpenAI-compatible `/v1/chat/completions`, including streaming, reasoning output, and tool calls. It may supervise a child copy of itself, as UnbiasedStrata does.
 4. Tokenization, chat formatting, special tokens, stop behavior, and tool parsing are validated for GLM rather than inherited as Qwen assumptions.
-5. Maya-S loads and produces coherent output on the actual 48/48 VM without OOM, swap dependence, or WAN access.
+5. Maya-S loads and produces coherent output on the actual 48/36 VM without OOM, swap dependence, or WAN access.
 6. Record cold startup, prompt processing, generation speed, memory use, and NVMe activity. Run a small agent task and grade its artifact separately from whether the agent finished cleanly.
 7. Document reproduction and rollback. Do not promise a token rate before measuring this model; report failure or a hardware limit explicitly if one is reached.
 
@@ -125,3 +125,25 @@ Resolve during implementation:
 - Sustainable context size and throughput on this particular PCIe/NVMe setup.
 
 No installation, model migration, GPU service switch, or publication is performed merely by writing this plan.
+
+## Updated experiment requirement
+
+The user requested reducing VM 220 to 36 GiB RAM before measurements. Set Proxmox memory to 36864 MiB with ballooning disabled; verify guest memory after restart. Start Maya with a 24 GiB pinned RAM expert budget and a 32 GiB service memory cap, then measure the actual VRAM/RAM/NVMe tiers. All downloaded Maya-S shards must also be copied to Debra’s mounted persistent, redundant SMB share and verified there.
+
+## Measured implementation outcome
+
+- VM 220 now uses 36 GiB, no ballooning or swap. Maya runs as a boot-enabled
+  `unbiased-maya.service`; earlier GPU services are stopped and disabled.
+- The full native pack contains 42 expert layers. Actual runtime capacity is
+  5,880 VRAM slots (38.97 GiB) and 3,623 pinned RAM slots (24 GiB), out of
+  12,096 experts. Remaining experts are served from local NVMe.
+- Three 400-token coding/prose tests: 10.33–11.05 tok/s. Fresh 3,236-token
+  prefill: 314.95 tok/s. Guest-cold restart after dropping page cache: 55 s.
+- Native tool-call/result cycle, streaming text, and the small Pi write/read
+  task passed; the Pi artifact and clean final stop were independently checked.
+- No OOM events. The 32 GiB service cap triggers file-cache reclamation during
+  load; it does not mean the VM was enlarged.
+- Full local evidence is under `maya-workspace/runs/a6000-36ram-20261011`;
+  portable results are in `benchmarks/a6000-36gb.json`. No full Regina quality
+  run or large agent task was attempted. New GitHub publication remains outside
+  this implementation step.

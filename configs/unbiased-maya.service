@@ -11,12 +11,12 @@ User=rk
 Group=rk
 WorkingDirectory=/home/rk/UnbiasedMaya
 Environment=CUDA_VISIBLE_DEVICES=0
-Environment=STRATA_GLM_RAM_GB=30
+Environment=STRATA_GLM_RAM_GB=24
 Environment=STRATA_GLM_TIMING=1
 ExecStart=/home/rk/UnbiasedMaya/build/unbiased-maya --model /mnt/ds4/maya/Maya-S-v2-IQ2_XXS/GLM-5.3-Flash-Maya-S-v2-IQ2_XXS-00001-of-00003.gguf --pack /mnt/ds4/maya/Maya-S-v2-IQ2_XXS/pack --ctx 8192 --host 0.0.0.0 --port 11434
 Restart=no
 TimeoutStopSec=60
-MemoryMax=44G
+MemoryMax=32G
 MemorySwapMax=0
 LimitMEMLOCK=infinity
 NoNewPrivileges=true

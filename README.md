@@ -4,9 +4,10 @@ Project Maya's GLM-5.3-Flash inference engine with native C++ model preparation
 and an OpenAI-compatible C++ server. No Python in the supported build,
 preparation, or runtime. Initial target: Linux, one NVIDIA GPU, text and tools.
 
-**Implementation under validation.** See [PLAN.md](PLAN.md) for acceptance
-criteria and [UPSTREAM.md](UPSTREAM.md) for source attribution. Performance on
-the A6000 48 GB / guest RAM 48 GiB configuration has not yet been measured.
+**Validated on RTX A6000 48 GB / guest RAM 36 GiB.** Maya-S runs at about
+10–11 tokens/s on the short coding tests below, with experts split across VRAM,
+pinned RAM, and NVMe. See [PLAN.md](PLAN.md) for acceptance criteria and
+[UPSTREAM.md](UPSTREAM.md) for attribution.
 
 ## Prepare on a connected machine
 
@@ -79,8 +80,7 @@ not implement them. Vision and external Qwen MTP packs are not supported.
 Do not run this and another GPU inference service simultaneously. Keep the
 existing service configuration and model archive until Maya has passed API,
 function-call, memory, and agent-task checks. Record cold startup and warm
-throughput separately. Initial deployment and measured results will be documented
-here after validation; a successful build alone is not a successful deployment.
+throughput separately. The initial deployment and results are documented below.
 
 ## Current validation
 
@@ -95,5 +95,60 @@ The frontend requires two narrowly scoped llama.cpp patches, both applied by
 `prepare-source.sh`: vocabulary-only GLM5-Next recognition and order-independent
 tagged tool arguments. No GLM engine math has been changed.
 
-A full model inference run is still pending the model transfer. Build/test
-success is not yet a measured throughput or agent-task result.
+The native packer prepared the complete three-shard Maya-S model: 1,257 dense/
+native tensor records, 42 expert layers, and 943,911,040 bytes in `dense.bin`.
+No expert payload was duplicated. Actual text, SSE, function-call/result turns,
+and a clean Pi agent task passed.
+
+The current experiment uses 36 GiB configured guest RAM (36864 MiB), requested
+after the initial build tests. The sample service starts with a 24 GiB pinned
+expert RAM budget and a 32 GiB cgroup limit. This deliberately leaves experts
+outside RAM/VRAM; engine tier statistics and guest disk-sector counters will be
+recorded together to distinguish logical disk requests from physical NVMe reads.
+
+On Debra, the persistent redundant archive is mounted at `/Volumes/models`.
+All three Maya-S shards are archived and SHA-256 verified under
+`/Volumes/models/project-maya/Maya-S-v2-IQ2_XXS`. That folder also contains
+`SHA256SUMS`, `model-provenance.json`, and `archive-verified.json`.
+
+## A6000 / 36 GiB measurements (2026-10-11)
+
+Model: `Maya-S-v2-IQ2_XXS`, pinned in `models-manifests/`. The VM uses 12 vCPUs
+on a Ryzen 7 1700 and a Samsung 970 EVO NVMe volume. Context 8192, greedy
+sampling, thinking disabled, no MTP. The engine automatically selected 8 CPU
+expert threads, 38.97 GiB of VRAM expert slots, and the explicit 24 GiB RAM tier.
+Capacity: 5,880 VRAM slots and 3,623 RAM slots out of 12,096 experts.
+
+| Check | Result |
+|---|---|
+| 400-token coding/prose decode | 10.33–11.05 tok/s |
+| Fresh 3,236-token prompt | 314.95 tok/s; 10.27 s |
+| Native function call and result | Correct `add(17,25)` call, then answer 42 |
+| Streaming text | Correct content and terminal `[DONE]` |
+| Pi task | Wrote exact file, read it back, clean final stop |
+| Guest-cold restart to readiness | 55 s after dropping guest page cache |
+| Memory | No swap or cgroup OOM; 32 GiB cap includes file cache |
+
+The three 400-token requests read approximately 22–33 GB each from the guest
+NVMe device, including their prompts. Engine disk waits were about 38–41 ms
+per output token in the two coding cases. This configuration does exercise
+the disk tier; the model is not fully resident in VRAM/RAM. Short prompts pay
+substantial expert-loading overhead and should not be confused with the larger
+prompt throughput above. Tool-result timing excludes the 175 reused tokens.
+
+[Machine-readable results](benchmarks/a6000-36gb.json) include timings and
+block-device read deltas. Coding responses were intentionally capped at 400
+tokens; this is a runtime/performance check, not a completed-code quality score.
+The Pi task was deliberately small, not a Regina suite. Earlier Qwen results
+used another model/quant and 48 GiB guest RAM, so comparisons are not isolated
+engine benchmarks. HDD archive hashing on the host overlapped these tests; VM
+model-copy traffic had ended before measurement.
+
+## Switch back to UnbiasedStrata
+
+The prior source, Qwen model, and service are retained. On this deployment,
+stop Maya before starting `unbiased-strata.service`; its service memory cap
+was reduced to 32 GiB for the smaller VM. Qwen has not yet been revalidated
+at 36 GiB. The older DwarfStar unit is disabled and its NVMe model was removed
+after verifying the Debra copy; restore that model and revisit its old 44 GiB
+service cap before using it.
